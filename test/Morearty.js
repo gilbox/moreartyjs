@@ -675,7 +675,7 @@ describe('Morearty', function () {
       });
 
       it('should return true if state is changed or full update was queued, false otherwise', function (done) {
-        var ctx = createCtx(IMap({ root: IMap({ key1: 'value1', key2: 'value2' }) }));
+        var ctx = createCtx(IMap({ root: IMap({ key1: 'value1', key2: 'value2', ding: IMap({ dong: 'sing' }) }) }));
 
         var shouldUpdate = [];
 
@@ -712,6 +712,7 @@ describe('Morearty', function () {
         ctx.getBinding().set('root.key1', 'foo');
         waitRender(function () {
           ctx.getBinding().set('root.key2', 'bar');
+          ctx.getBinding().sub('root.ding.dong').meta().set('ack', 'zoom');
 
           waitRender(function () {
             ctx.queueFullUpdate();

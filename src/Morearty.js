@@ -18,47 +18,34 @@ var MERGE_STRATEGY = Object.freeze({
   MERGE_REPLACE: 'merge-replace'
 });
 
-var getBinding, bindingChanged, observedBindingsChanged, stateChanged;
+var getBinding, bindingStateChanged, stateChanged;
 
 getBinding = function (props, key) {
   var binding = props.binding;
   return key ? binding[key] : binding;
 };
 
-bindingChanged = function (context, currentBinding) {
-  return (context._stateChanged && currentBinding.isChanged(context._previousState)) ||
+bindingStateChanged = function (context, previousState, currentBinding) {
+  return (context._stateChanged && previousState !== currentBinding.get()) ||
          (context._metaChanged && context._metaBinding.sub(currentBinding.getPath()).isChanged(context._previousMetaState));
 };
 
-observedBindingsChanged = function (self) {
-  return self.observedBindings &&
-      !!Util.find(self.observedBindings, function (binding) {
-        return bindingChanged(self.getMoreartyContext(), binding);
-      });
-};
+stateChanged = function (self, currentBinding, previousBinding, previousState) {
+  if (!currentBinding) return false;
 
-stateChanged = function (self, currentBinding, previousBinding) {
-  var observedChanged = observedBindingsChanged(self);
-  if (!currentBinding && !observedChanged) {
-    return false;
+  var context = self.getMoreartyContext();
+
+  if (currentBinding instanceof Binding) {
+    return currentBinding !== previousBinding || bindingStateChanged(context, previousState, currentBinding);
   } else {
-    if (observedChanged) {
-      return true;
+    if (context._stateChanged || context._metaChanged) {
+      var keys = Object.keys(currentBinding);
+      return !!Util.find(keys, function (key) {
+        var binding = currentBinding[key];
+        return binding && (binding !== previousBinding[key] || bindingStateChanged(context, previousState[key], binding));
+      });
     } else {
-      var context = self.getMoreartyContext();
-      if (currentBinding instanceof Binding) {
-        return currentBinding !== previousBinding || bindingChanged(context, currentBinding);
-      } else {
-        if (context._stateChanged || context._metaChanged) {
-          var keys = Object.keys(currentBinding);
-          return !!Util.find(keys, function (key) {
-            var binding = currentBinding[key];
-            return binding && (binding !== previousBinding[key] || bindingChanged(context, binding));
-          });
-        } else {
-          return false;
-        }
-      }
+      return false;
     }
   }
 };
@@ -128,7 +115,7 @@ var getRenderRoutine = function (self) {
   }
 };
 
-var initState, initDefaultState, initDefaultMetaState;
+var initState, initDefaultState, initDefaultMetaState, savePreviousState;
 
 initState = function (self, getStateMethodName, f) {
   if (typeof self[getStateMethodName] === 'function') {
@@ -168,6 +155,21 @@ initDefaultState = function (self) {
 
 initDefaultMetaState = function (self) {
   initState(self, 'getDefaultMetaState', function (b) { return b.meta(); });
+};
+
+savePreviousState = function (self) {
+  self._previousState = {};
+  var binding = self.props.binding;
+  if (binding) {
+    if (binding instanceof Binding) {
+      self._previousState = binding.get();
+    } else {
+      Object.keys(self.props.binding)
+        .forEach(function(k) {
+          self._previousState[k] = self.props.binding[k] && self.props.binding[k].get();
+        });
+    }
+  }
 };
 
 /** Morearty context constructor.
@@ -217,6 +219,12 @@ var Context = function (binding, metaBinding, options) {
   /** @protected
    * @ignore */
   this._fullUpdateInProgress = false;
+
+  /** @private */
+  this._componentQueue = [];
+
+  /** @private */
+  this._lastComponentQueueId = 0;
 };
 
 Context.prototype = Object.freeze( /** @lends Context.prototype */ {
@@ -382,11 +390,17 @@ Context.prototype = Object.freeze( /** @lends Context.prototype */ {
       catchingRenderErrors(function () {
         if (self._fullUpdateQueued) {
           self._fullUpdateInProgress = true;
+
           rootComp.forceUpdate(function () {
             self._fullUpdateQueued = false;
             self._fullUpdateInProgress = false;
           });
         } else {
+          self._componentQueue.forEach(function (c) {
+            c.forceUpdate();
+          });
+          self._componentQueue = [];
+
           rootComp.forceUpdate();
         }
       });
@@ -424,6 +438,18 @@ Context.prototype = Object.freeze( /** @lends Context.prototype */ {
   /** Queue full update on next render. */
   queueFullUpdate: function () {
     this._fullUpdateQueued = true;
+  },
+
+  addComponentToRenderQueue: function (component) {
+    this._componentQueue[component.componentQueueId] = component;
+  },
+
+  removeComponentFromRenderQueue: function (component) {
+    delete this._componentQueue[component.componentQueueId];
+  },
+
+  getUniqueComponentQueueId: function () {
+    return ++this._lastComponentQueueId;
   },
 
   /** Create Morearty bootstrap component ready for rendering.
@@ -543,11 +569,21 @@ module.exports = {
 
     /** Get component previous state value.
      * @param {String} [name] binding name (can only be used with multi-binding state)
-     * @return {Binding} previous component state value */
+     * @return {Object} previous props.binding resolved to Immutables {Binding, Binding,...} --> {Immutable, Immutable,...} */
     getPreviousState: function (name) {
-      var ctx = this.getMoreartyContext();
-      return getBinding(this.props, name).withBackingValue(ctx._previousState).get();
+      return this._previousState;
     },
+
+    setupObservedBindingListener: function (binding) {
+      var self = this;
+      this._observedListenerIds.push(
+        binding.addListener(function (changes) {
+          self.getMoreartyContext().addComponentToRenderQueue(self);
+        })
+      );
+    },
+    _observedListenerIds: [],
+
 
     /** Consider specified binding for changes when rendering. Registering same binding twice has no effect.
      * @param {Binding} binding
@@ -561,22 +597,30 @@ module.exports = {
       var bindingPath = binding.getPath();
       if (!Util.find(this.observedBindings, function (b) { return b.getPath() === bindingPath; })) {
         this.observedBindings.push(binding);
+        this.setupObservedBindingListener(binding);
       }
 
       return cb ? cb(binding.get()) : undefined;
     },
 
     componentWillMount: function () {
+      var ctx = this.getMoreartyContext();
+      this.componentQueueId = ctx && ctx.getUniqueComponentQueueId();
+
+      savePreviousState(this);
       initDefaultState(this);
       initDefaultMetaState(this);
+
+      if (this.observedBindings) this.observedBindings.forEach(this.setupObservedBindingListener);
     },
 
     shouldComponentUpdate: function (nextProps, nextState, nextContext) {
       var self = this;
       var ctx = self.getMoreartyContext();
+
       var shouldComponentUpdate = function () {
         return ctx._fullUpdateInProgress ||
-            stateChanged(self, getBinding(nextProps), getBinding(self.props)) ||
+            stateChanged(self, getBinding(nextProps), getBinding(self.props), self.getPreviousState()) ||
             observedPropsChanged(self, nextProps);
       };
 
@@ -617,14 +661,23 @@ module.exports = {
       }
     },
 
+    componentDidUpdate: function () {
+      this.getMoreartyContext().removeComponentFromRenderQueue(this);
+      savePreviousState(this);
+    },
+
     componentWillUnmount: function () {
-      if (typeof this.shouldRemoveListeners === 'function' && this.shouldRemoveListeners()) {
-        var binding = this.getDefaultBinding();
-        if (binding) {
+      var binding = this.getDefaultBinding();
+      if (binding) {
+        var remover = binding.removeListener.bind(binding);
+        this._observedListenerIds.forEach(remover);
+        this._observedListenerIds = [];
+
+        if (typeof this.shouldRemoveListeners === 'function' && this.shouldRemoveListeners()) {
           var listenersBinding = binding.meta('listeners');
           var listeners = listenersBinding.get();
           if (listeners) {
-            listeners.forEach(binding.removeListener.bind(binding));
+            listeners.forEach(remover);
             listenersBinding.atomically().remove().commit({notify: false});
           }
         }

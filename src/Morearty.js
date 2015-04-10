@@ -391,21 +391,27 @@ Context.prototype = Object.freeze( /** @lends Context.prototype */ {
           self._fullUpdateInProgress = true;
 
           self._componentQueue.forEach(function (c, i) {
-            c.forceUpdate();
+            if (c) {
+              c.forceUpdate();
+              self._componentQueue[i] = false;  // prevent double-render during top-down
+            }
           });
-          self._componentQueue = [];
 
           rootComp.forceUpdate(function () {
             self._fullUpdateQueued = false;
             self._fullUpdateInProgress = false;
           });
+          self._componentQueue = [];
         } else {
           self._componentQueue.forEach(function (c, i) {
-            c.forceUpdate();
+            if (c) {
+              c.forceUpdate();
+              self._componentQueue[i] = false;  // prevent double render during top-down
+            }
           });
-          self._componentQueue = [];
 
           rootComp.forceUpdate();
+          self._componentQueue = [];
         }
       });
     };
@@ -617,12 +623,22 @@ module.exports = {
       var self = this;
       var ctx = self.getMoreartyContext();
 
-      delete ctx._componentQueue[this.componentQueueId];
+      var wasntRendered = true;
+
+      if (ctx._componentQueue[this.componentQueueId] !== undefined) {
+        if (ctx._componentQueue[this.componentQueueId]) {
+          // set to false so SCU will subsequently return false
+          ctx._componentQueue[this.componentQueueId] = false;
+        } else {
+          // we already rendered this component
+          wasntRendered = false;
+        }
+      }
 
       var shouldComponentUpdate = function () {
-        return ctx._fullUpdateInProgress ||
+        return wasntRendered && (ctx._fullUpdateInProgress ||
             stateChanged(self, getBinding(nextProps), getBinding(self.props)) ||
-            observedPropsChanged(self, nextProps);
+            observedPropsChanged(self, nextProps));
       };
 
       var shouldComponentUpdateOverride = self.shouldComponentUpdateOverride;

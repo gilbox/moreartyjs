@@ -425,6 +425,7 @@ Context.prototype = Object.freeze( /** @lends Context.prototype */ {
         } else {
           self._componentQueue.forEach(function (c) {
             c.forceUpdate();
+            savePreviousState(c);
           });
           self._componentQueue = [];
 
@@ -624,10 +625,13 @@ module.exports = {
     shouldComponentUpdate: function (nextProps, nextState, nextContext) {
       var self = this;
       var ctx = self.getMoreartyContext();
+      var previousState = self._previousState;
+
+      savePreviousState(self);
 
       var shouldComponentUpdate = function () {
         return ctx._fullUpdateInProgress ||
-            stateChanged(self, getBinding(nextProps), getBinding(self.props), self._previousState) ||
+            stateChanged(self, getBinding(nextProps), getBinding(self.props), previousState) ||
             observedPropsChanged(self, nextProps);
       };
 
@@ -670,7 +674,6 @@ module.exports = {
 
     componentDidUpdate: function () {
       removeComponentFromRenderQueue(this.getMoreartyContext(), this);
-      savePreviousState(this);
     },
 
     componentWillUnmount: function () {

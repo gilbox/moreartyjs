@@ -585,7 +585,7 @@ module.exports = {
 
     /** Get component previous state value.
      * @param {String} [name] binding name (can only be used with multi-binding state)
-     * @return {Object} previous component state value */
+     * @return {Binding} previous component state value */
     getPreviousState: function (name) {
       var ctx = this.getMoreartyContext();
       return getBinding(this.props, name).withBackingValue(ctx._previousState).get();

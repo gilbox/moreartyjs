@@ -25,25 +25,25 @@ getBinding = function (props, key) {
   return key ? binding[key] : binding;
 };
 
-bindingStateChanged = function (context, previousState, currentBinding) {
+bindingStateChanged = function (context, previousState, currentBinding, previousMetaState) {
   return (context._stateChanged && previousState !== currentBinding.get()) ||
-    (context._metaChanged && context._metaBinding.sub(currentBinding.getPath()).isChanged(context._previousMetaState));
+    (context._metaChanged && context._metaBinding.sub(currentBinding.getPath()).isChanged(previousMetaState));
 };
 
-stateChanged = function (self, currentBinding, previousBinding, previousState) {
+stateChanged = function (self, currentBinding, previousBinding, previousState, previousMetaState) {
   if (!currentBinding) return false;
   else {
     var context = self.getMoreartyContext();
 
     if (currentBinding instanceof Binding) {
-      return currentBinding !== previousBinding || bindingStateChanged(context, previousState, currentBinding);
+      return currentBinding !== previousBinding || bindingStateChanged(context, previousState, currentBinding, previousMetaState);
     } else {
       if (context._stateChanged || context._metaChanged) {
         var keys = Object.keys(currentBinding);
         return !!Util.find(keys, function (key) {
           var binding = currentBinding[key];
           return binding &&
-            (binding !== previousBinding[key] || bindingStateChanged(context, previousState[key], binding));
+            (binding !== previousBinding[key] || bindingStateChanged(context, previousState[key], binding, previousMetaState));
         });
       } else {
         return false;
@@ -159,9 +159,10 @@ initDefaultMetaState = function (self) {
   initState(self, 'getDefaultMetaState', function (b) { return b.meta(); });
 };
 
-savePreviousState = function (self) {
+savePreviousState = function (self, ctx) {
   var binding = self.props.binding;
   if (binding) {
+    self._previousMetaState = ctx && ctx.getCurrentMeta();
     if (binding instanceof Binding) {
       self._previousState = binding.get();
     } else {
@@ -171,6 +172,9 @@ savePreviousState = function (self) {
           self._previousState[key] = self.props.binding[key] && self.props.binding[key].get();
         });
     }
+  } else {
+    self._previousState = null;
+    self._previousMetaState = null;
   }
 };
 
@@ -425,7 +429,7 @@ Context.prototype = Object.freeze( /** @lends Context.prototype */ {
         } else {
           self._componentQueue.forEach(function (c) {
             c.forceUpdate();
-            savePreviousState(c);
+            savePreviousState(c, self);
           });
           self._componentQueue = [];
 
@@ -613,7 +617,7 @@ module.exports = {
     componentWillMount: function () {
       this.componentQueueId = getUniqueComponentQueueId(this.getMoreartyContext());
 
-      savePreviousState(this);
+      savePreviousState(this, this.getMoreartyContext());
       initDefaultState(this);
       initDefaultMetaState(this);
 
@@ -626,12 +630,13 @@ module.exports = {
       var self = this;
       var ctx = self.getMoreartyContext();
       var previousState = self._previousState;
+      var previousMetaState = self._previousMetaState;
 
-      savePreviousState(self);
+      savePreviousState(self, ctx);
 
       var shouldComponentUpdate = function () {
         return ctx._fullUpdateInProgress ||
-            stateChanged(self, getBinding(nextProps), getBinding(self.props), previousState) ||
+            stateChanged(self, getBinding(nextProps), getBinding(self.props), previousState, previousMetaState) ||
             observedPropsChanged(self, nextProps);
       };
 

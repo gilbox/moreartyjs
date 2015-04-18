@@ -2048,4 +2048,46 @@ describe('Morearty', function () {
     });
 
   });
+
+  describe('savePreviousState', function () {
+    it('should not error when binding prop is not a proper Binding', function (done) {
+      var initialState = IMap({ key: 'foo' });
+      var ctx = createCtx(initialState);
+      var didRender = false;
+      var value;
+
+      var subComp = createClass({
+        render: function () {
+          var realBinding = this.getBinding('real');
+          if (realBinding) value = realBinding.get();
+          didRender = true;
+          return null;
+        }
+      });
+
+      var rootComp = createClass({
+        render: function () {
+          return React.createElement(
+                  "div",
+                  null,
+                  React.createFactory(subComp)({ binding: 'fake' }),
+                  React.createFactory(subComp)({ binding: {
+                    real: this.getDefaultBinding().sub('key'),
+                    fake: 'fake'
+                  }})
+                );
+        }
+      });
+
+      var bootstrapComp = React.createFactory(ctx.bootstrap(rootComp));
+
+      React.render(bootstrapComp(), global.document.getElementById('root'));
+
+      waitRender(function () {
+        assert.isTrue(didRender);
+        assert.strictEqual(value, 'foo');
+        done();
+      });
+    });
+  });
 });

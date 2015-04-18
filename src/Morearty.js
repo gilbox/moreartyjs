@@ -161,7 +161,7 @@ initDefaultMetaState = function (self) {
 
 savePreviousState = function (self) {
   var binding = self.props.binding;
-  if (binding) {
+  if (binding instanceof Object) {
     var ctx = self.getMoreartyContext();
     self._previousMetaState = ctx && ctx.getCurrentMeta();
     if (binding instanceof Binding) {
@@ -170,7 +170,7 @@ savePreviousState = function (self) {
       self._previousState = {};
       Object.keys(self.props.binding)
         .forEach(function (key) {
-          self._previousState[key] = self.props.binding[key] && self.props.binding[key].get();
+          self._previousState[key] = (self.props.binding[key] instanceof Binding) && self.props.binding[key].get();
         });
     }
   } else {

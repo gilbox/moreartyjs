@@ -1,5 +1,6 @@
 var Util  = require('./Util');
 var React = require('react');
+var Morearty = require('./Morearty');
 
 var _ = (function() {
   if (React) return React.DOM;
@@ -10,6 +11,7 @@ var _ = (function() {
 
 var wrapComponent = function (comp, displayName) {
   return React.createClass({
+    mixins: [Morearty.Mixin],
 
     displayName: displayName,
 
@@ -18,6 +20,12 @@ var wrapComponent = function (comp, displayName) {
     },
 
     onChange: function (event) {
+      // Always schedule a re-render in case the user changes the value of
+      // the input but the binding's backing value doesn't change:
+      // in this case we need to force a re-render otherwise the
+      // rendered value and backing value go out-of-sync
+      this.context.morearty.addComponentToRenderQueue(this);
+
       var handler = this.props.onChange;
       if (handler) {
         handler(event);

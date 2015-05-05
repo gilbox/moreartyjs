@@ -260,6 +260,10 @@ var Context = function (binding, metaBinding, options) {
 };
 
 Context.prototype = Object.freeze( /** @lends Context.prototype */ {
+  addComponentToRenderQueue: function (component) {
+    addComponentToRenderQueue(this, component);
+  },
+
   /** Get state binding.
    * @return {Binding} state binding
    * @see Binding */

@@ -37,6 +37,7 @@
     "src/*",
     "README.md",
     "index.js",
+    "native.js",
     "dist/morearty.js",
     "dist/morearty.min.js"
   ],
